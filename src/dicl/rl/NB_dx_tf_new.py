@@ -106,6 +106,7 @@ class neural_bays_dx_tf(object):
                 self.train_y_s = _to_np(new_y)
                 #add reward
                 self.rew_s =  _to_np(new_r)
+                self.curr_ids =[range(new_x.shape[0])]
                 return self.train_x_s.shape
         
 
@@ -116,6 +117,7 @@ class neural_bays_dx_tf(object):
                     self.train_y_s = _to_np(new_y)
                     #add reward
                     self.rew_s =  _to_np(new_r)
+                    self.curr_ids =[range(new_x.shape[0])]
                     return self.train_x_s.shape
                 else:
                     #add the thinning condition : Based on Posterior variane (if posterior variance > threshold)
@@ -136,6 +138,7 @@ class neural_bays_dx_tf(object):
                     # print (torch.is_tensor(self.train_x))
                     #add rewards
                     self.rew_s = np.vstack((tr, nr))
+                    self.curr_ids = list(range(0, self.train_x_s.shape[0]))
                     return self.train_x_s.shape
                 
 
@@ -177,11 +180,14 @@ class neural_bays_dx_tf(object):
     def generate_latent_z(self, real = True):
         # Update the latent representation of every datapoint collected so far
         if real:
+            #pdb.set_trace()
+            # REAL
             new_z = self.get_representation(self.train_x)
             self.latent_z = new_z
         else:
             # print ('the shape is' + str(self.train_x.shape))   ## 200 * 4
-        
+            #pdb.set_trace()
+            # FAKE
             new_z = self.get_representation(self.train_x_s)
             self.latent_z_s = new_z
 
@@ -701,7 +707,7 @@ class neural_bays_dx_tf(object):
                 grad = np.concatenate((nabla_z_f,nabla_y_f), axis=1)
                 reg_y = np.squeeze(np.array(reg_y),2).T
                 smpl = np.concatenate((self.latent_z_s,reg_y ), axis=1)
-
+                
 
 
                 ###########################  New Thinning Method #################################################
@@ -727,11 +733,19 @@ class neural_bays_dx_tf(object):
                 init_sample = torch.tensor(samples[0], dtype=torch.double).to(device)
                 init_gradient = torch.tensor(gradients[0], dtype=torch.double).to(device)
                 pruning_container.add_point(point=init_sample, gradient=init_gradient, global_id = self.global_next_id)
-
+                #pdb.set_trace()
                 #Define the generatpr
-                sample_generator = ((torch.tensor(samples[i:i + 10],dtype=torch.double).to(device),
-                    torch.tensor(gradients[i:i + 10], dtype=torch.double).to(device), torch.tensor(self.curr_ids[i:i+10], dtype=torch.double).to(device)) for i in range(0, samples.shape[0], 10))
+                BATCH = 7
+                N = samples.shape[0]               # 256, not 23
+                assert gradients.shape[0] == N
+                assert len(self.curr_ids) == N
 
+                sample_generator = (
+                    (
+                        torch.as_tensor(samples[i:i+BATCH], dtype=torch.double, device=device),
+                        torch.as_tensor(gradients[i:i+BATCH], dtype=torch.double, device=device),
+                        torch.as_tensor(self.curr_ids[i:i+BATCH], dtype=torch.long,  device=device).squeeze(-1)
+                    ) for i in range(0, N, BATCH))
                 #implement new thining
                 addition_rule = 'spmcmc'
                 prune = [False, None]
@@ -742,11 +756,17 @@ class neural_bays_dx_tf(object):
                 exponent = 1.0
                 
                 all_pruned_rep_ids = []
+                
+                #pdb.set_trace()
 
                 #Main loop
                 for step, (batch_samples, batch_gradients, ids) in enumerate(sample_generator):
-
-
+                    #print("STEP ", step)
+                    """
+                    print(ids)
+                    print(ids.shape)
+                    print(self.curr_ids)
+                    """
                     #part 1
                     #unique_samples, first_occ_idx,  inverse_idx = batch_samples.unique_consecutive(dim=0, return_inverse=True, return_index=True)
                     ids = ids.to(batch_samples.device).long() 
@@ -758,7 +778,7 @@ class neural_bays_dx_tf(object):
                     # 2) Compute first occurrence index for each unique row
                     U = unique_samples.size(0)
                     first_occ_idx = torch.empty(U, dtype=torch.long, device=batch_samples.device)
-
+                     
                     # Fast path if your torch has scatter_reduce (1.12+):
                     if hasattr(torch.Tensor, 'scatter_reduce'):
                         # make positions 0..B-1
@@ -774,8 +794,15 @@ class neural_bays_dx_tf(object):
                     # print (idx)
                     batch_samples = unique_samples
                     batch_gradients = batch_gradients[first_occ_idx]
-                    ids_nodedup = ids
+                    
+                    ids_nodedup = ids.to(batch_samples.device).long()
+                    #print(ids.shape)
+                    #print(first_occ_idx)
+                    #pdb.set_trace()
+                    
                     ids = ids[first_occ_idx]
+                    
+
                     ids = ids.to(batch_samples.device).long()
 
                     #ids_rep_cpu = ids_nodedup.cpu()
@@ -783,20 +810,16 @@ class neural_bays_dx_tf(object):
                     #ids_full_cpu = ids.cpu()
                      
                     rep_to_all_ids = {}
-                    """
-                    for u, rep_pos in enumerate(first_occ_idx):
-                        rep_id = int(ids[u].item())                 # representative’s original id
-                        members_mask = (inverse_idx == u)
-                        members_ids  = ids_nodedup[members_mask]       # all originals that collapse to this unique row
-                        rep_to_all_ids[rep_id] = members_ids.cpu().tolist()
-                    """
-
+                    
                     for u in range(U):
-                        rep_id = int(ids_nodedup[u].item())          # safe: convert on CPU
+                        ids_cpu = ids_nodedup.cpu()
+                        item = ids_nodedup[u]
+                        rep_id = int(item.item())          # safe: convert on CPU
                         members_mask = (inverse_idx == u)            # (B, ) on device
                         members_ids  = ids_nodedup[members_mask]        # tensor on device, length = #members
                         rep_to_all_ids[rep_id] = members_ids.detach().cpu().tolist()
                     #get next
+                    
                     next_sample, next_gradient, next_id = neural_bays_dx_tf.select_samples(pruning_container=pruning_container,
                                                                 new_samples=batch_samples,
                                                                 new_gradients=batch_gradients,
@@ -807,14 +830,6 @@ class neural_bays_dx_tf(object):
                     #add to cont
                     pruning_container.add_point(point=next_sample, gradient=next_gradient, global_id=int(next_id.item()))
 
-                    """
-                    if exponent>(2.0-1e-10):
-                        min_samples = step/2.0
-
-                    else:
-                        min_samples = math.sqrt((step**(exponent)) * max(math.log(step + 1.0), 1.0))
-                    """
-                    
                     min_keep = max(5, samples.shape[0] // 3)
                     #implement pruning
                     pruned, pruned_ids = pruning_container.prune_to_cutoff(cutoff=EPSILON, min_samples=min_keep)
@@ -822,8 +837,8 @@ class neural_bays_dx_tf(object):
                     #save the pruned samples
                     pruned_samples.append(pruned)
                     all_pruned_rep_ids.extend(pruned_ids)
-
-
+                    
+ 
                 #clean the pruned samples
                 
                 pruned_rep_ids = all_pruned_rep_ids  # from prune_to_cutoff

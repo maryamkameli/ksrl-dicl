@@ -104,7 +104,7 @@ def get_KSD(samples,
     """
 
     num_samples = samples.shape[0]
-    print("NUM_SAMPLES ", num_samples)
+    #print("NUM_SAMPLES ", num_samples)
     K = get_K_matrix(samples=samples,
                      gradients=gradients,
                      kernel_type=kernel_type,

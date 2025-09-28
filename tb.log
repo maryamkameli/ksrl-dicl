@@ -204,3 +204,4 @@ W0920 23:35:42.746052 139996808591104 plugin_event_multiplexer.py:267] Deleting 
 W0920 23:35:42.746072 139996808591104 plugin_event_multiplexer.py:267] Deleting accumulator 'Pendulum__test_5p_dicl_s_clean_baseline_20_sep_test_episodic_return__9809__1758425879'
 W0920 23:35:42.746092 139996808591104 plugin_event_multiplexer.py:267] Deleting accumulator 'Pendulum__test_5p_dicl_s_clean_baseline_20_sep_test_episodic_return__14313__1758425978'
 W0921 01:20:01.869306 139996808591104 plugin_event_multiplexer.py:267] Deleting accumulator 'HalfCheetah-v4__test_5p_dicl_s_clean_baseline_20_sep_test_episodic_return__16893__1758429875'
+TensorBoard caught SIGTERM; exiting...
