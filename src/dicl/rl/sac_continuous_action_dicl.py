@@ -813,38 +813,38 @@ def main():
                     
                     if args.train_only_from_llm:
                         # data = data_llm
-                        if ((global_step + local_step)%250 == 0):
-                            newiter = True
-                            for i in range(len(data_llm[0])):
-                                #pdb.set_trace()
-                                if args.env_id == "Pendulum":
-                                    xu = torch.cat((torch.tensor(tf.get_static_value(data_llm[0][i].squeeze().cpu())).double(), torch.tensor(tf.get_static_value(data_llm[1][i].cpu())).double()))
-                                else:
-                                    xu = torch.cat((torch.tensor(tf.get_static_value(data_llm[0][i].squeeze().cpu())).double(), torch.tensor(tf.get_static_value(data_llm[1][i].squeeze().cpu())).double()))
-                                    # print("XUXUXU ", xu)
-                                y = torch.tensor(tf.get_static_value(data[2][i].cpu())).squeeze() - torch.tensor(tf.get_static_value(data_llm[0][i].cpu())).squeeze()
-                                shappe = my_dx.add_data(new_x=xu, new_y=y, new_r = torch.tensor(tf.get_static_value(data_llm[4][i].cpu())).squeeze(0), real=False, newiter = newiter)
-                                newiter = False
-                                #print("GLOBAL STEP ", global_step)
-                                #print("LOCAL STEP ", local_step)
-                                #my_dx.train(100)
-                            my_dx.generate_latent_z(False)
-                            #if (global_step + local_step)%1000 == 0:
-                            #    post_var = my_dx.update_bays_reg(False)
-                            #ksd_val = my_dx.get_ksd('ksd', False)
-                            ids = my_dx.thin_data_new('ksd', False)
+                
+                        newiter = True
+                        for i in range(len(data_llm[0])):
+                            #pdb.set_trace()
+                            if args.env_id == "Pendulum":
+                                xu = torch.cat((torch.tensor(tf.get_static_value(data_llm[0][i].squeeze().cpu())).double(), torch.tensor(tf.get_static_value(data_llm[1][i].cpu())).double()))
+                            else:
+                                xu = torch.cat((torch.tensor(tf.get_static_value(data_llm[0][i].squeeze().cpu())).double(), torch.tensor(tf.get_static_value(data_llm[1][i].squeeze().cpu())).double()))
+                                # print("XUXUXU ", xu)
+                            y = torch.tensor(tf.get_static_value(data[2][i].cpu())).squeeze() - torch.tensor(tf.get_static_value(data_llm[0][i].cpu())).squeeze()
+                            shappe = my_dx.add_data(new_x=xu, new_y=y, new_r = torch.tensor(tf.get_static_value(data_llm[4][i].cpu())).squeeze(0), real=False, newiter = newiter)
+                            newiter = False
+                            #print("GLOBAL STEP ", global_step)
+                            #print("LOCAL STEP ", local_step)
+                            #my_dx.train(100)
+                        my_dx.generate_latent_z(False)
+                        #if (global_step + local_step)%1000 == 0:
+                        #    post_var = my_dx.update_bays_reg(False)
+                        #ksd_val = my_dx.get_ksd('ksd', False)
+                        ids = my_dx.thin_data_new('ksd', False)
 
-                            idx = torch.tensor(ids, dtype=torch.long, device=data_llm.observations.device)
+                        idx = torch.tensor(ids, dtype=torch.long, device=data_llm.observations.device)
 
-                            subset = ReplayBufferSamples(
-                                observations      = data.observations.index_select(0, idx),
-                                actions           = data.actions.index_select(0, idx),
-                                next_observations = data.next_observations.index_select(0, idx),
-                                dones             = data.dones.index_select(0, idx),
-                                rewards           = data.rewards.index_select(0, idx),
-                                discounts         = None if data.discounts is None
-                                                        else data.discounts.index_select(0, idx),
-                                )
+                        subset = ReplayBufferSamples(
+                            observations      = data.observations.index_select(0, idx),
+                            actions           = data.actions.index_select(0, idx),
+                            next_observations = data.next_observations.index_select(0, idx),
+                            dones             = data.dones.index_select(0, idx),
+                            rewards           = data.rewards.index_select(0, idx),
+                            discounts         = None if data.discounts is None
+                                                    else data.discounts.index_select(0, idx),
+                            )
                            
 
                         batches_to_train_on = [copy.copy(data_llm)]
