@@ -32,6 +32,9 @@ from .tf_models.constructor import construct_shallow_model, construct_shallow_co
 import pdb
 #import ksdp
 
+# Profiler
+from dx_profiler import dx_profiler
+
 
 from .ksdp import *
 from .ksdp import utils
@@ -383,6 +386,9 @@ class Actor(nn.Module):
 def main():
     args = tyro.cli(Args)
     tf.disable_v2_behavior()
+
+    dx_profiler.start_profiling()
+
     run_name = f"{args.env_id}__{args.exp_name}__{args.seed}__{int(time.time())}"
 
     writer = SummaryWriter(f"{args.path}/runs/{run_name}")
@@ -749,20 +755,27 @@ def main():
                 batches_to_train_on = [copy.copy(data)]
                 coeff_batches_to_train_on = [1.0]
                 if ((global_step + local_step)%250 == 0) and (global_step + local_step) <( args.llm_learning_starts  - args.learning_starts  + step_started_sampling):
-                    for i in range(batches_to_train_on[0].observations.shape[0]):
-                        if args.env_id == "Pendulum":
-                            xu = torch.cat((torch.tensor(tf.get_static_value(batches_to_train_on[0].observations[i].squeeze().cpu())).double(), torch.tensor(tf.get_static_value(batches_to_train_on[0].actions[i].cpu())).double()))
-                        else:
-                            xu = torch.cat((torch.tensor(tf.get_static_value(batches_to_train_on[0].observations[i].squeeze().cpu())).double(), torch.tensor(tf.get_static_value(batches_to_train_on[0].actions[i].squeeze().cpu())).double()))
+                    # Profiling data 
+                    with dx_profiler.time_method("data_addition_loop"):
+                        for i in range(batches_to_train_on[0].observations.shape[0]):
+                            if args.env_id == "Pendulum":
+                                xu = torch.cat((torch.tensor(tf.get_static_value(batches_to_train_on[0].observations[i].squeeze().cpu())).double(), torch.tensor(tf.get_static_value(batches_to_train_on[0].actions[i].cpu())).double()))
+                            else:
+                                xu = torch.cat((torch.tensor(tf.get_static_value(batches_to_train_on[0].observations[i].squeeze().cpu())).double(), torch.tensor(tf.get_static_value(batches_to_train_on[0].actions[i].squeeze().cpu())).double()))
                         # print("XUXUXU ", xu)
                         y = torch.tensor(tf.get_static_value(batches_to_train_on[0].next_observations[i].cpu())).squeeze() - torch.tensor(tf.get_static_value(batches_to_train_on[0].observations[i].cpu())).squeeze()
-                        shappe = my_dx.add_data(new_x=xu, new_y=y, new_r = torch.tensor(tf.get_static_value(batches_to_train_on[0].rewards[i].cpu())).squeeze(0))
+                        with dx_profiler.time_method("my_dx.add_data"):
+                            shappe = my_dx.add_data(new_x=xu, new_y=y, new_r = torch.tensor(tf.get_static_value(batches_to_train_on[0].rewards[i].cpu())).squeeze(0))
                     #print("GLOBAL STEP ", global_step)
                     #print("LOCAL STEP ", local_step)
-                    my_dx.train(100)
-                    my_dx.generate_latent_z(True)
-                    post_var = my_dx.update_bays_reg()
-                    ksd_val = my_dx.get_ksd('ksd')
+                    with dx_profiler.time_method("my_dx.train"):
+                        my_dx.train(100)
+                    with dx_profiler.time_method("my_dx.generate_latent_z"):
+                        my_dx.generate_latent_z(True)
+                    with dx_profiler.time_method("my_dx.update_bays_reg"):
+                        post_var = my_dx.update_bays_reg()
+                    with dx_profiler.time_method("my_dx.get_ksd"):
+                        ksd_val = my_dx.get_ksd('ksd')
                 """ 
                 if ((global_step + local_step)%1 == 0):
                     #pdb.set_trace()
@@ -828,11 +841,13 @@ def main():
                             #print("GLOBAL STEP ", global_step)
                             #print("LOCAL STEP ", local_step)
                             #my_dx.train(100)
-                        my_dx.generate_latent_z(False)
+                        with dx_profiler.time_method("my_dx.generate_latent_z_llm"):
+                            my_dx.generate_latent_z(False)
                         #if (global_step + local_step)%1000 == 0:
                         #    post_var = my_dx.update_bays_reg(False)
                         #ksd_val = my_dx.get_ksd('ksd', False)
-                        ids = my_dx.thin_data_new('ksd', False)
+                        with dx_profiler.time_method("my_dx.thin_data_new"):
+                            ids = my_dx.thin_data_new('ksd', False)
 
                         idx = torch.tensor(ids, dtype=torch.long, device=data_llm.observations.device)
 
@@ -997,6 +1012,11 @@ def main():
     envs.close()
     writer.close()
     csv_logger.flush()
+
+    # profiling report 
+    dx_profiler.stop_profiling()
+    dx_profiler.print_report()
+    dx_profiler.save_report(f"{args.path}/runs/{run_name}/my_dx_profiling_report.json")
 
 
 if __name__ == "__main__":
